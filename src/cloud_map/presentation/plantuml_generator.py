@@ -137,8 +137,9 @@ class PlantUMLDiagramGenerator(DiagramGenerator):
         igw_ids = []
         for igw in topology.internet_gateways:
             igw_id = igw.resource_id.replace('-', '_')
+            igw_name = igw.name or "Internet Gateway"
             igw_ids.append(igw_id)
-            lines.append(f"      VPCInternetGateway({igw_id}, \"Internet Gateway\", \"\")")
+            lines.append(f"      VPCInternetGateway({igw_id}, \"{igw_name}\", \"\")")
         
         vpc_cidr = getattr(topology.vpc, 'cidr_block', 'N/A')
         lines.append(f"      VPCGroup({vpc_id}, \"{vpc_name}\\n{vpc_cidr}\") {{")

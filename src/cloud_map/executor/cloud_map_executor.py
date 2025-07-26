@@ -145,11 +145,18 @@ class CloudMapExecutor:
     
     def generate_diagrams(self, topologies: Dict[str, Any], output_file: Optional[str] = None):
         """Generate diagrams for all discovered topologies."""
+        # Always generate individual region diagrams first
         if output_file:
             with open(output_file, 'w') as f:
                 self._write_diagrams(topologies, f)
         else:
             self._write_diagrams(topologies, sys.stdout)
+        
+        # Additionally generate consolidated diagram for multiple regions with PlantUML
+        if (len(self.regions) > 1 and 
+            self.presentation_type == PresentationType.PLANTUML and 
+            len([t for t in topologies.values() if t is not None]) > 1):
+            self._generate_consolidated_diagram(topologies, None)
     
     def _write_diagrams(self, topologies: Dict[str, Any], output):
         """Write diagrams to output stream."""
@@ -176,3 +183,73 @@ class CloudMapExecutor:
         
         self.logger.info(f"Output saved to: {self.session_dir}")
         self.logger.info("Cloud map execution completed")
+    
+    def _generate_consolidated_diagram(self, topologies: Dict[str, Any], output_file: Optional[str] = None):
+        """Generate a single consolidated diagram for multiple regions."""
+        self.logger.info("Generating consolidated multi-region diagram")
+        
+        # Create consolidated content
+        content = self._generate_consolidated_plantuml_content(topologies)
+        
+        if output_file:
+            with open(output_file, 'w') as f:
+                f.write(content)
+        else:
+            sys.stdout.write(content)
+        
+        # Save to files and generate PNG if output manager is available
+        if self.output_manager and self.session_dir:
+            self.output_manager.save_consolidated_plantuml_output(content, self.session_dir, list(topologies.keys()))
+    
+    def _generate_consolidated_plantuml_content(self, topologies: Dict[str, Any]) -> str:
+        """Generate consolidated PlantUML content for multiple regions."""
+        lines = []
+        lines.append("@startuml")
+        lines.append("!define AWSPuml https://raw.githubusercontent.com/awslabs/aws-icons-for-plantuml/v20.0/dist")
+        lines.append("!include AWSPuml/AWSCommon.puml")
+        lines.append("!include AWSPuml/AWSSimplified.puml")
+        lines.append("!include AWSPuml/Compute/EC2.puml")
+        lines.append("!include AWSPuml/Compute/EC2Instance.puml")
+        lines.append("!include AWSPuml/Compute/Lambda.puml")
+        lines.append("!include AWSPuml/NetworkingContentDelivery/VPCNATGateway.puml")
+        lines.append("!include AWSPuml/NetworkingContentDelivery/VPCInternetGateway.puml")
+        lines.append("!include AWSPuml/NetworkingContentDelivery/APIGateway.puml")
+        lines.append("!include AWSPuml/NetworkingContentDelivery/Route53.puml")
+        lines.append("!include AWSPuml/Groups/AWSCloud.puml")
+        lines.append("!include AWSPuml/Groups/VPC.puml")
+        lines.append("!include AWSPuml/Groups/PublicSubnet.puml")
+        lines.append("!include AWSPuml/Groups/PrivateSubnet.puml")
+        lines.append("!include AWSPuml/Groups/AvailabilityZone.puml")
+        lines.append("!include AWSPuml/Groups/Region.puml")
+        lines.append("")
+        lines.append("hide stereotype")
+        lines.append("skinparam linetype ortho")
+        lines.append("")
+        
+        region_names = [region for region, topology in topologies.items() if topology is not None]
+        lines.append(f"title AWS Multi-Region Infrastructure - {', '.join(region_names)}")
+        lines.append("")
+        
+        # Add AWS Cloud group containing multiple regions
+        lines.append(f"AWSCloudGroup(aws_cloud) {{")
+        
+        for region, topology in topologies.items():
+            if topology is None:
+                continue
+                
+            region_id = region.replace('-', '_')
+            lines.append(f"  RegionGroup({region_id}, \"{region}\") {{")
+            
+            # Generate VPC content for this region using existing generator
+            for network_topology in topology.vpcs:
+                vpc_lines = self.diagram_generator._generate_vpc_diagram_lines(network_topology)
+                # Adjust indentation for region grouping (add 2 more spaces)
+                for line in vpc_lines:
+                    if line.strip():
+                        lines.append("  " + line)
+            
+            lines.append("  }")
+        
+        lines.append("}")
+        lines.append("@enduml")
+        return "\n".join(lines)

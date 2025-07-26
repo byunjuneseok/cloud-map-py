@@ -90,7 +90,7 @@ class OutputManager:
         try:
             png_file = session_dir / f"{region}_infrastructure.png"
             result = subprocess.run([
-                'plantuml', '-tpng', str(puml_file), '-o', str(session_dir)
+                'plantuml', '-tpng', str(puml_file)
             ], capture_output=True, text=True, timeout=30)
             
             if result.returncode == 0 and png_file.exists():
@@ -100,7 +100,7 @@ class OutputManager:
                 try:
                     result = subprocess.run([
                         'java', '-jar', '/usr/local/bin/plantuml.jar', '-tpng', 
-                        str(puml_file), '-o', str(session_dir)
+                        str(puml_file)
                     ], capture_output=True, text=True, timeout=30)
                     
                     if result.returncode == 0 and png_file.exists():
@@ -118,6 +118,52 @@ class OutputManager:
         
         return files
     
+    def save_consolidated_plantuml_output(self, content: str, session_dir: Path, regions: list) -> Dict[str, Path]:
+        """Save consolidated PlantUML content for multiple regions and render to PNG."""
+        files = {}
+        
+        # Create filename for multi-region diagram
+        region_str = '_'.join(regions)
+        
+        # Save .puml file
+        puml_file = session_dir / f"multi_region_{region_str}_infrastructure.puml"
+        with open(puml_file, 'w') as f:
+            f.write(content)
+        files['puml'] = puml_file
+        
+        # Try to render to PNG using plantuml
+        try:
+            png_file = session_dir / f"multi_region_{region_str}_infrastructure.png"
+            result = subprocess.run([
+                'plantuml', '-tpng', str(puml_file)
+            ], capture_output=True, text=True, timeout=60)
+            
+            if result.returncode == 0 and png_file.exists():
+                files['png'] = png_file
+                print(f"Multi-region PNG diagram generated: {png_file}")
+            else:
+                # Try with java -jar if plantuml command failed
+                try:
+                    result = subprocess.run([
+                        'java', '-jar', '/usr/local/bin/plantuml.jar', '-tpng', 
+                        str(puml_file)
+                    ], capture_output=True, text=True, timeout=60)
+                    
+                    if result.returncode == 0 and png_file.exists():
+                        files['png'] = png_file
+                        print(f"Multi-region PNG diagram generated: {png_file}")
+                except Exception:
+                    pass
+                    
+        except Exception as e:
+            # Create a note about rendering failure
+            with open(session_dir / f"multi_region_render_error.txt", 'w') as f:
+                f.write(f"PlantUML rendering failed: {e}\n")
+                f.write("Install PlantUML to enable image generation:\n")
+                f.write("brew install plantuml  # macOS\n")
+                f.write("apt-get install plantuml  # Ubuntu\n")
+        
+        return files
     
     def save_terminal_output(self, content: str, session_dir: Path, region: str) -> Path:
         """Save terminal output to text file."""
