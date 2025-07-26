@@ -3,7 +3,7 @@
 from typing import List, Optional
 from dataclasses import dataclass, field
 
-from .models import VPC, Subnet, RouteTable, InternetGateway, EC2Instance, LambdaFunction
+from ..model.models import VPC, Subnet, RouteTable, InternetGateway, EC2Instance, LambdaFunction, Route53HostedZone, APIGateway, NATGateway, NetworkACL, SecurityGroup
 
 
 @dataclass
@@ -14,8 +14,13 @@ class NetworkTopology:
     subnets: List[Subnet] = field(default_factory=list)
     route_tables: List[RouteTable] = field(default_factory=list)
     internet_gateways: List[InternetGateway] = field(default_factory=list)
+    nat_gateways: List[NATGateway] = field(default_factory=list)
+    network_acls: List[NetworkACL] = field(default_factory=list)
+    security_groups: List[SecurityGroup] = field(default_factory=list)
     ec2_instances: List[EC2Instance] = field(default_factory=list)
     lambda_functions: List[LambdaFunction] = field(default_factory=list)
+    route53_zones: List[Route53HostedZone] = field(default_factory=list)
+    api_gateways: List[APIGateway] = field(default_factory=list)
     
     def get_subnet_by_id(self, subnet_id: str) -> Optional[Subnet]:
         """Get subnet by ID."""
@@ -73,18 +78,28 @@ class ResourceOrganizer:
         subnets: List[Subnet],
         route_tables: List[RouteTable],
         internet_gateways: List[InternetGateway],
+        nat_gateways: List[NATGateway],
+        network_acls: List[NetworkACL],
+        security_groups: List[SecurityGroup],
         ec2_instances: List[EC2Instance],
-        lambda_functions: Optional[List[LambdaFunction]] = None
+        lambda_functions: Optional[List[LambdaFunction]] = None,
+        route53_zones: Optional[List[Route53HostedZone]] = None,
+        api_gateways: Optional[List[APIGateway]] = None
     ) -> List[NetworkTopology]:
         """Organize resources into VPC-level topologies."""
         
         topologies = []
         lambda_functions = lambda_functions or []
+        route53_zones = route53_zones or []
+        api_gateways = api_gateways or []
         
         for vpc in vpcs:
             vpc_subnets = [subnet for subnet in subnets if subnet.vpc_id == vpc.resource_id]
             vpc_route_tables = [rt for rt in route_tables if rt.vpc_id == vpc.resource_id]
             vpc_gateways = [igw for igw in internet_gateways if igw.vpc_id == vpc.resource_id]
+            vpc_nat_gateways = [nat for nat in nat_gateways if nat.vpc_id == vpc.resource_id]
+            vpc_network_acls = [acl for acl in network_acls if acl.vpc_id == vpc.resource_id]
+            vpc_security_groups = [sg for sg in security_groups if sg.vpc_id == vpc.resource_id]
             vpc_instances = [instance for instance in ec2_instances if instance.vpc_id == vpc.resource_id]
             
             vpc_lambda_functions = []
@@ -93,13 +108,20 @@ class ResourceOrganizer:
                                          if subnet.resource_id in func.subnet_ids):
                     vpc_lambda_functions.append(func)
             
+            vpc_route53_zones = [zone for zone in route53_zones if vpc.resource_id in zone.vpc_associations]
+            
             topology = NetworkTopology(
                 vpc=vpc,
                 subnets=vpc_subnets,
                 route_tables=vpc_route_tables,
                 internet_gateways=vpc_gateways,
+                nat_gateways=vpc_nat_gateways,
+                network_acls=vpc_network_acls,
+                security_groups=vpc_security_groups,
                 ec2_instances=vpc_instances,
-                lambda_functions=vpc_lambda_functions
+                lambda_functions=vpc_lambda_functions,
+                route53_zones=vpc_route53_zones,
+                api_gateways=api_gateways
             )
             topologies.append(topology)
         

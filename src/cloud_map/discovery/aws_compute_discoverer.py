@@ -5,7 +5,8 @@ import boto3
 from botocore.exceptions import BotoCoreError, ClientError
 
 from .interfaces import ComputeDiscoverer
-from .models import EC2Instance
+from ..model.models import EC2Instance
+from .boto3_caller import Boto3Caller
 
 
 class AWSComputeDiscoverer(ComputeDiscoverer):
@@ -13,8 +14,7 @@ class AWSComputeDiscoverer(ComputeDiscoverer):
     
     def __init__(self, region: str = 'us-east-1', session: Optional[boto3.Session] = None):
         self.region = region
-        self.session = session or boto3.Session()
-        self.ec2_client = self.session.client('ec2', region_name=region)
+        self.boto3_caller = Boto3Caller(region, session)
     
     def discover_ec2_instances(self, subnet_id: Optional[str] = None) -> List[EC2Instance]:
         """Discover EC2 instances, optionally filtered by subnet."""
@@ -24,9 +24,9 @@ class AWSComputeDiscoverer(ComputeDiscoverer):
                 filters.append({'Name': 'subnet-id', 'Values': [subnet_id]})
             
             if filters:
-                response = self.ec2_client.describe_instances(Filters=filters)
+                response = self.boto3_caller.call_api('ec2', 'describe_instances', Filters=filters)
             else:
-                response = self.ec2_client.describe_instances()
+                response = self.boto3_caller.call_api('ec2', 'describe_instances')
             
             instances = []
             

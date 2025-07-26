@@ -141,3 +141,51 @@ class APIGateway(BaseResource):
     def __post_init__(self):
         super().__post_init__()
         self.resource_type = "api_gateway"
+
+
+@dataclass
+class NATGateway(BaseResource):
+    """NAT Gateway resource model."""
+    
+    vpc_id: str
+    subnet_id: str
+    state: str
+    nat_gateway_type: str
+    connectivity_type: str
+    allocation_id: Optional[str] = None
+    name: Optional[str] = None
+    
+    def __post_init__(self):
+        super().__post_init__()
+        self.resource_type = "nat_gateway"
+
+
+@dataclass
+class NetworkACL(BaseResource):
+    """Network ACL resource model."""
+    
+    vpc_id: str
+    is_default: bool
+    subnet_associations: List[str]
+    entries: List[Dict[str, str]]
+    name: Optional[str] = None
+    
+    def __post_init__(self):
+        super().__post_init__()
+        self.resource_type = "network_acl"
+
+
+@dataclass
+class SecurityGroup(BaseResource):
+    """Security Group resource model."""
+    
+    vpc_id: str
+    group_name: str
+    description: str
+    inbound_rules: List[Dict[str, str]]
+    outbound_rules: List[Dict[str, str]]
+    name: Optional[str] = None
+    
+    def __post_init__(self):
+        super().__post_init__()
+        self.resource_type = "security_group"

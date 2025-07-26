@@ -4,19 +4,9 @@ from typing import List, Optional
 import boto3
 from botocore.exceptions import BotoCoreError, ClientError
 
-from .models import Route53HostedZone, APIGateway
-
-
-class NetworkUtilitiesDiscoverer:
-    """Abstract base class for network utilities discovery."""
-    
-    def discover_route53_zones(self, vpc_id: Optional[str] = None) -> List[Route53HostedZone]:
-        """Discover Route53 hosted zones, optionally filtered by VPC."""
-        raise NotImplementedError
-    
-    def discover_api_gateways(self, vpc_id: Optional[str] = None) -> List[APIGateway]:
-        """Discover API Gateways, optionally filtered by VPC."""
-        raise NotImplementedError
+from ..model.models import Route53HostedZone, APIGateway
+from .boto3_caller import Boto3Caller
+from .interfaces import NetworkUtilitiesDiscoverer
 
 
 class AWSNetworkUtilitiesDiscoverer(NetworkUtilitiesDiscoverer):
@@ -24,22 +14,19 @@ class AWSNetworkUtilitiesDiscoverer(NetworkUtilitiesDiscoverer):
     
     def __init__(self, region: str = 'us-east-1', session: Optional[boto3.Session] = None):
         self.region = region
-        self.session = session or boto3.Session()
-        self.route53_client = self.session.client('route53')
-        self.apigateway_client = self.session.client('apigateway', region_name=region)
-        self.apigatewayv2_client = self.session.client('apigatewayv2', region_name=region)
+        self.boto3_caller = Boto3Caller(region, session)
     
     def discover_route53_zones(self, vpc_id: Optional[str] = None) -> List[Route53HostedZone]:
         """Discover Route53 hosted zones, optionally filtered by VPC."""
         try:
-            response = self.route53_client.list_hosted_zones()
+            response = self.boto3_caller.call_api('route53', 'list_hosted_zones')
             zones = []
             
             for zone_data in response['HostedZones']:
                 zone_id = zone_data['Id'].split('/')[-1]
                 
                 try:
-                    zone_details = self.route53_client.get_hosted_zone(Id=zone_id)
+                    zone_details = self.boto3_caller.call_api('route53', 'get_hosted_zone', Id=zone_id)
                     zone_info = zone_details['HostedZone']
                     vpcs = zone_details.get('VPCs', [])
                     
@@ -49,7 +36,8 @@ class AWSNetworkUtilitiesDiscoverer(NetworkUtilitiesDiscoverer):
                         continue
                     
                     try:
-                        tags_response = self.route53_client.list_tags_for_resource(
+                        tags_response = self.boto3_caller.call_api(
+                            'route53', 'list_tags_for_resource',
                             ResourceType='hostedzone',
                             ResourceId=zone_id
                         )
@@ -84,10 +72,11 @@ class AWSNetworkUtilitiesDiscoverer(NetworkUtilitiesDiscoverer):
         gateways = []
         
         try:
-            rest_apis = self.apigateway_client.get_rest_apis()
+            rest_apis = self.boto3_caller.call_api('apigateway', 'get_rest_apis')
             for api_data in rest_apis['items']:
                 try:
-                    tags_response = self.apigateway_client.get_tags(
+                    tags_response = self.boto3_caller.call_api(
+                        'apigateway', 'get_tags',
                         resourceArn=f"arn:aws:apigateway:{self.region}::/restapis/{api_data['id']}"
                     )
                     tags = tags_response.get('tags', {})
@@ -111,10 +100,11 @@ class AWSNetworkUtilitiesDiscoverer(NetworkUtilitiesDiscoverer):
             print(f"Warning: Failed to discover REST APIs: {e}")
         
         try:
-            http_apis = self.apigatewayv2_client.get_apis()
+            http_apis = self.boto3_caller.call_api('apigatewayv2', 'get_apis')
             for api_data in http_apis['Items']:
                 try:
-                    tags_response = self.apigatewayv2_client.get_tags(
+                    tags_response = self.boto3_caller.call_api(
+                        'apigatewayv2', 'get_tags',
                         ResourceArn=f"arn:aws:apigateway:{self.region}::/apis/{api_data['ApiId']}"
                     )
                     tags = tags_response.get('Tags', {})

@@ -1,0 +1,1 @@
+"""Model package for resource data models."""

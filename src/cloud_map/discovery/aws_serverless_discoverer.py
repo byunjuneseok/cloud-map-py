@@ -4,15 +4,9 @@ from typing import List, Optional
 import boto3
 from botocore.exceptions import BotoCoreError, ClientError
 
-from .models import LambdaFunction
-
-
-class ServerlessDiscoverer:
-    """Abstract base class for serverless resource discovery."""
-    
-    def discover_lambda_functions(self, vpc_id: Optional[str] = None) -> List[LambdaFunction]:
-        """Discover Lambda functions, optionally filtered by VPC."""
-        raise NotImplementedError
+from ..model.models import LambdaFunction
+from .boto3_caller import Boto3Caller
+from .interfaces import ServerlessDiscoverer
 
 
 class AWSServerlessDiscoverer(ServerlessDiscoverer):
@@ -20,20 +14,20 @@ class AWSServerlessDiscoverer(ServerlessDiscoverer):
     
     def __init__(self, region: str = 'us-east-1', session: Optional[boto3.Session] = None):
         self.region = region
-        self.session = session or boto3.Session()
-        self.lambda_client = self.session.client('lambda', region_name=region)
+        self.boto3_caller = Boto3Caller(region, session)
     
     def discover_lambda_functions(self, vpc_id: Optional[str] = None) -> List[LambdaFunction]:
         """Discover Lambda functions, optionally filtered by VPC."""
         try:
-            response = self.lambda_client.list_functions()
+            response = self.boto3_caller.call_api('lambda', 'list_functions')
             functions = []
             
             for func_data in response['Functions']:
                 function_name = func_data['FunctionName']
                 
                 try:
-                    func_config = self.lambda_client.get_function_configuration(
+                    func_config = self.boto3_caller.call_api(
+                        'lambda', 'get_function_configuration',
                         FunctionName=function_name
                     )
                     
@@ -44,7 +38,8 @@ class AWSServerlessDiscoverer(ServerlessDiscoverer):
                     if vpc_id and vpc_config.get('VpcId') != vpc_id:
                         continue
                     
-                    tags_response = self.lambda_client.list_tags(
+                    tags_response = self.boto3_caller.call_api(
+                        'lambda', 'list_tags',
                         Resource=func_config['FunctionArn']
                     )
                     tags = tags_response.get('Tags', {})
