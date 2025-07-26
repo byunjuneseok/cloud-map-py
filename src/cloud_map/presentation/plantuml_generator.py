@@ -41,6 +41,7 @@ class PlantUMLDiagramGenerator(DiagramGenerator):
         lines.append("!include AWSPuml/Groups/PublicSubnet.puml")
         lines.append("!include AWSPuml/Groups/PrivateSubnet.puml")
         lines.append("!include AWSPuml/Groups/AvailabilityZone.puml")
+        lines.append("!include AWSPuml/Groups/Region.puml")
         lines.append("")
         lines.append("hide stereotype")
         lines.append("skinparam linetype ortho")
@@ -48,25 +49,80 @@ class PlantUMLDiagramGenerator(DiagramGenerator):
         lines.append(f"title AWS Infrastructure - {account_topology.region}")
         lines.append("")
         
+        # Add AWS Cloud group containing Region
+        region_id = account_topology.region.replace('-', '_')
+        lines.append(f"AWSCloudGroup(aws_cloud) {{")
+        lines.append(f"  RegionGroup({region_id}, \"{account_topology.region}\") {{")
+        
         for network_topology in account_topology.vpcs:
             lines.extend(self._generate_vpc_diagram_lines(network_topology))
         
-        # Add routing table information as a table note
+        lines.append("  }")
+        lines.append("}")
+        
+        # Add routing table information as separate notes for each route table
         if any(vpc.route_tables for vpc in account_topology.vpcs):
             lines.append("")
-            lines.append("note bottom")
-            lines.append("<size:12><b>Routing Tables</b></size>")
-            lines.append("<#lightblue,#black>|= Route Table |= Destination |= Target |= Status |")
+            lines.append("' Routing Table Information")
             
             for network_topology in account_topology.vpcs:
-                for rt in network_topology.route_tables[:5]:  # Show first 5 route tables
-                    rt_name = (rt.name or rt.resource_id)[:20]  # Truncate long names
-                    for route in rt.routes[:3]:  # Show first 3 routes per table
-                        dest = route.get('destination', 'N/A')[:18]
-                        gateway = route.get('gateway_id', 'local')[:18]
-                        status = route.get('state', 'active')[:10]
-                        lines.append(f"| {rt_name} | {dest} | {gateway} | {status} |")
-            lines.append("end note")
+                # Keep track of which subnets already have route table notes to distribute them
+                used_subnets = set()
+                
+                for i, rt in enumerate(network_topology.route_tables[:5]):
+                    rt_name = rt.name or rt.resource_id
+                    
+                    # Find subnets associated with this route table
+                    associated_subnets = []
+                    
+                    # Check explicit associations first
+                    if hasattr(rt, 'associations') and rt.associations:
+                        for assoc in rt.associations:
+                            if hasattr(assoc, 'subnet_id'):
+                                for subnet in network_topology.subnets:
+                                    if subnet.resource_id == assoc.subnet_id:
+                                        associated_subnets.append(subnet)
+                    
+                    # If no explicit associations, try to distribute route tables across different subnets
+                    if not associated_subnets:
+                        # For main route table, associate with remaining subnets
+                        if rt.name and 'main' in rt.name.lower():
+                            for subnet in network_topology.subnets:
+                                if subnet.resource_id not in used_subnets:
+                                    associated_subnets.append(subnet)
+                        else:
+                            # For custom route tables, pick an unused subnet
+                            available_subnets = [s for s in network_topology.subnets if s.resource_id not in used_subnets]
+                            if available_subnets:
+                                associated_subnets.append(available_subnets[0])
+                            elif network_topology.subnets:
+                                # If all subnets used, cycle through them
+                                associated_subnets.append(network_topology.subnets[i % len(network_topology.subnets)])
+                    
+                    # If still no associations, use first available subnet
+                    if not associated_subnets and network_topology.subnets:
+                        available_subnets = [s for s in network_topology.subnets if s.resource_id not in used_subnets]
+                        if available_subnets:
+                            associated_subnets.append(available_subnets[0])
+                        else:
+                            associated_subnets.append(network_topology.subnets[0])
+                    
+                    # Create note for this route table on one of its associated subnets
+                    if associated_subnets:
+                        subnet = associated_subnets[0]  # Use first associated subnet
+                        subnet_id = subnet.resource_id.replace('-', '_')
+                        used_subnets.add(subnet.resource_id)
+                        
+                        lines.append(f"note top of {subnet_id}")
+                        lines.append(f"<size:10><b>{rt_name}</b></size>")
+                        lines.append("<#lightblue,#black>|= Destination |= Target |= Status |")
+                        
+                        for route in rt.routes[:3]:  # Show first 3 routes per table
+                            dest = route.get('destination', 'N/A')[:15]
+                            gateway = route.get('gateway_id', 'local')[:15] 
+                            status = route.get('state', 'active')[:8]
+                            lines.append(f"| {dest} | {gateway} | {status} |")
+                        lines.append("end note")
         
         lines.append("@enduml")
         return "\n".join(lines)
@@ -77,16 +133,14 @@ class PlantUMLDiagramGenerator(DiagramGenerator):
         vpc_name = topology.vpc.name or topology.vpc.resource_id
         vpc_id = topology.vpc.resource_id.replace('-', '_')
         
-        # Start with AWSCloud group containing the VPC
-        lines.append(f"AWSCloudGroup(cloud_{vpc_id}) {{")
-        lines.append(f"  VPCGroup({vpc_id}, \"{vpc_name}\") {{")
-        
-        # Add Internet Gateway
+        # Add Internet Gateway outside VPC (at cloud level)
         igw_ids = []
         for igw in topology.internet_gateways:
             igw_id = igw.resource_id.replace('-', '_')
             igw_ids.append(igw_id)
-            lines.append(f"    VPCInternetGateway({igw_id}, \"Internet Gateway\", \"\")")
+            lines.append(f"      VPCInternetGateway({igw_id}, \"Internet Gateway\", \"\")")
+        
+        lines.append(f"      VPCGroup({vpc_id}, \"{vpc_name}\") {{")
         
         # Group subnets by Availability Zone
         az_groups = {}
@@ -107,13 +161,13 @@ class PlantUMLDiagramGenerator(DiagramGenerator):
         for az, subnet_groups in az_groups.items():
             az_id = az.replace('-', '_').replace('.', '_')
             lines.append(f"")
-            lines.append(f"    AvailabilityZoneGroup({az_id}, \"\\t{az}\\t\") {{")
+            lines.append(f"        AvailabilityZoneGroup({az_id}, \"\\t{az}\\t\") {{")
             
             # Public subnets in this AZ
             for subnet in subnet_groups['public']:
                 subnet_id = subnet.resource_id.replace('-', '_')
                 
-                lines.append(f"      PublicSubnetGroup({subnet_id}, \"Public subnet\\n{subnet.cidr_block}\") {{")
+                lines.append(f"          PublicSubnetGroup({subnet_id}, \"Public subnet\\n{subnet.cidr_block}\") {{")
                 
                 # NAT Gateways in this subnet
                 nat_gateways = [nat for nat in topology.nat_gateways if nat.subnet_id == subnet.resource_id]
@@ -121,95 +175,166 @@ class PlantUMLDiagramGenerator(DiagramGenerator):
                     nat_id = nat.resource_id.replace('-', '_')
                     nat_name = nat.name or "NAT Gateway"
                     nat_gateway_ids.append(nat_id)
-                    lines.append(f"        VPCNATGateway({nat_id}, \"{nat_name}\", \"\") #Transparent")
+                    lines.append(f"            VPCNATGateway({nat_id}, \"{nat_name}\", \"\") #Transparent")
                 
-                # EC2 instances in this subnet - organized in rows
+                # EC2 instances in this subnet - organized in n x m grid
                 instances = topology.get_instances_by_subnet(subnet.resource_id)
                 if instances:
-                    # Group instances in rows of 3 for better layout
-                    for i in range(0, len(instances), 3):
-                        row_instances = instances[i:i+3]
-                        row_instance_ids = []
-                        for instance in row_instances:
-                            instance_name = instance.name or "Instance"
-                            instance_id = instance.resource_id.replace('-', '_')
-                            ec2_ids.append(instance_id)
-                            row_instance_ids.append(instance_id)
-                            lines.append(f"        EC2Instance({instance_id}, \"{instance_name}\\n{instance.instance_type}\", \"\") #Transparent")
-                        
-                        # Add horizontal alignment for instances in the same row
-                        if len(row_instance_ids) > 1:
-                            for j in range(len(row_instance_ids) - 1):
-                                lines.append(f"        {row_instance_ids[j]} -[hidden]r- {row_instance_ids[j+1]}")
+                    # Calculate optimal grid dimensions (prefer more square-like layout)
+                    total_instances = len(instances)
+                    if total_instances <= 2:
+                        cols, rows = total_instances, 1
+                    elif total_instances <= 4:
+                        cols, rows = 2, (total_instances + 1) // 2
+                    elif total_instances <= 9:
+                        cols, rows = 3, (total_instances + 2) // 3
+                    else:
+                        # For larger numbers, aim for roughly square grid
+                        cols = min(4, int(total_instances ** 0.5) + 1)
+                        rows = (total_instances + cols - 1) // cols
+                    
+                    # Create grid layout
+                    grid_instances = []
+                    for row in range(rows):
+                        row_instances = []
+                        for col in range(cols):
+                            idx = row * cols + col
+                            if idx < total_instances:
+                                instance = instances[idx]
+                                instance_name = instance.name or "Instance"
+                                instance_id = instance.resource_id.replace('-', '_')
+                                ec2_ids.append(instance_id)
+                                row_instances.append((instance_id, instance_name, instance.instance_type))
+                                lines.append(f"            EC2Instance({instance_id}, \"{instance_name}\\n{instance.instance_type}\", \"\") #Transparent")
+                            else:
+                                row_instances.append(None)
+                        grid_instances.append(row_instances)
+                    
+                    # Add horizontal connections within rows
+                    for row_data in grid_instances:
+                        valid_instances = [inst for inst in row_data if inst is not None]
+                        if len(valid_instances) > 1:
+                            for j in range(len(valid_instances) - 1):
+                                lines.append(f"            {valid_instances[j][0]} -[hidden]r- {valid_instances[j+1][0]}")
+                    
+                    # Add vertical connections between rows
+                    for row in range(len(grid_instances) - 1):
+                        for col in range(cols):
+                            if (grid_instances[row][col] is not None and 
+                                grid_instances[row + 1][col] is not None):
+                                lines.append(f"            {grid_instances[row][col][0]} -[hidden]d- {grid_instances[row + 1][col][0]}")
                 
-                lines.append("      }")
+                lines.append("          }")
             
             # Private subnets in this AZ
             for subnet in subnet_groups['private']:
                 subnet_id = subnet.resource_id.replace('-', '_')
                 
-                lines.append(f"      PrivateSubnetGroup({subnet_id}, \"Private subnet\\n{subnet.cidr_block}\") {{")
+                lines.append(f"          PrivateSubnetGroup({subnet_id}, \"Private subnet\\n{subnet.cidr_block}\") {{")
                 
-                # EC2 instances in this subnet - organized in rows
+                # EC2 instances in this subnet - organized in n x m grid
                 instances = topology.get_instances_by_subnet(subnet.resource_id)
                 if instances:
-                    # Group instances in rows of 3 for better layout
-                    for i in range(0, len(instances), 3):
-                        row_instances = instances[i:i+3]
-                        row_instance_ids = []
-                        for instance in row_instances:
-                            instance_name = instance.name or "Instance"
-                            instance_id = instance.resource_id.replace('-', '_')
-                            ec2_ids.append(instance_id)
-                            row_instance_ids.append(instance_id)
-                            lines.append(f"        EC2Instance({instance_id}, \"{instance_name}\\n{instance.instance_type}\", \"\") #Transparent")
-                        
-                        # Add horizontal alignment for instances in the same row
-                        if len(row_instance_ids) > 1:
-                            for j in range(len(row_instance_ids) - 1):
-                                lines.append(f"        {row_instance_ids[j]} -[hidden]r- {row_instance_ids[j+1]}")
+                    # Calculate optimal grid dimensions (prefer more square-like layout)
+                    total_instances = len(instances)
+                    if total_instances <= 2:
+                        cols, rows = total_instances, 1
+                    elif total_instances <= 4:
+                        cols, rows = 2, (total_instances + 1) // 2
+                    elif total_instances <= 9:
+                        cols, rows = 3, (total_instances + 2) // 3
+                    else:
+                        # For larger numbers, aim for roughly square grid
+                        cols = min(4, int(total_instances ** 0.5) + 1)
+                        rows = (total_instances + cols - 1) // cols
+                    
+                    # Create grid layout
+                    grid_instances = []
+                    for row in range(rows):
+                        row_instances = []
+                        for col in range(cols):
+                            idx = row * cols + col
+                            if idx < total_instances:
+                                instance = instances[idx]
+                                instance_name = instance.name or "Instance"
+                                instance_id = instance.resource_id.replace('-', '_')
+                                ec2_ids.append(instance_id)
+                                row_instances.append((instance_id, instance_name, instance.instance_type))
+                                lines.append(f"            EC2Instance({instance_id}, \"{instance_name}\\n{instance.instance_type}\", \"\") #Transparent")
+                            else:
+                                row_instances.append(None)
+                        grid_instances.append(row_instances)
+                    
+                    # Add horizontal connections within rows
+                    for row_data in grid_instances:
+                        valid_instances = [inst for inst in row_data if inst is not None]
+                        if len(valid_instances) > 1:
+                            for j in range(len(valid_instances) - 1):
+                                lines.append(f"            {valid_instances[j][0]} -[hidden]r- {valid_instances[j+1][0]}")
+                    
+                    # Add vertical connections between rows
+                    for row in range(len(grid_instances) - 1):
+                        for col in range(cols):
+                            if (grid_instances[row][col] is not None and 
+                                grid_instances[row + 1][col] is not None):
+                                lines.append(f"            {grid_instances[row][col][0]} -[hidden]d- {grid_instances[row + 1][col][0]}")
                 
-                lines.append("      }")
+                lines.append("          }")
             
-            lines.append("    }")
+            lines.append("        }")
         
         # Close VPC group
-        lines.append("  }")
-        lines.append("}")
+        lines.append("      }")
         
-        # Add Route53 zones outside the cloud group
+        # Add Route53 zones at cloud level
         route53_ids = []
         for zone in topology.route53_zones:
             zone_id = zone.resource_id.replace('-', '_')
             zone_type = "Private" if zone.private_zone else "Public"
             route53_ids.append(zone_id)
-            lines.append(f"Route53({zone_id}, \"{zone.zone_name}\\n{zone_type} Zone\", \"\")")
+            lines.append(f"      Route53({zone_id}, \"{zone.zone_name}\\n{zone_type} Zone\", \"\")")
         
-        # Add API Gateways outside the cloud group
+        # Add API Gateways at cloud level
         api_ids = []
         for api in topology.api_gateways:
             api_id = api.resource_id.replace('-', '_')
             api_ids.append(api_id)
-            lines.append(f"APIGateway({api_id}, \"{api.api_name}\\n{api.api_type}\", \"\")")
+            lines.append(f"      APIGateway({api_id}, \"{api.api_name}\\n{api.api_type}\", \"\")")
         
         lines.append("")
         
         # Add network flow connections using proper PlantUML syntax
-        if nat_gateway_ids and igw_ids:
-            lines.append("' Network Flow Connections")
-            for nat_id in nat_gateway_ids:
-                lines.append(f"{nat_id} .u.> {igw_ids[0]}")
+        lines.append("' Network Flow Connections")
         
-        # Connect private instances to NAT gateways
-        if ec2_ids and nat_gateway_ids:
-            # Find private subnet instances and connect them to NAT
+        # NAT Gateway to Internet Gateway flow
+        if nat_gateway_ids and igw_ids:
+            for nat_id in nat_gateway_ids:
+                lines.append(f"{nat_id} .u.> {igw_ids[0]} : outbound traffic")
+        
+        # Public subnets to Internet Gateway flow  
+        if igw_ids:
+            for az, subnet_groups in az_groups.items():
+                for subnet in subnet_groups['public']:
+                    subnet_id = subnet.resource_id.replace('-', '_')
+                    lines.append(f"{subnet_id} .u.> {igw_ids[0]} : direct internet access")
+        
+        # Private subnets to NAT gateways (subnet-level routing)
+        if nat_gateway_ids:
             for az, subnet_groups in az_groups.items():
                 for subnet in subnet_groups['private']:
-                    instances = topology.get_instances_by_subnet(subnet.resource_id)
-                    for instance in instances:
-                        instance_id = instance.resource_id.replace('-', '_')
-                        if nat_gateway_ids:
-                            lines.append(f"{instance_id} .u.> {nat_gateway_ids[0]}")
+                    subnet_id = subnet.resource_id.replace('-', '_')
+                    # Find NAT gateway in same AZ if available, otherwise use first available
+                    nat_in_same_az = None
+                    for nat in topology.nat_gateways:
+                        for pub_subnet in subnet_groups['public']:
+                            if nat.subnet_id == pub_subnet.resource_id:
+                                nat_in_same_az = nat.resource_id.replace('-', '_')
+                                break
+                        if nat_in_same_az:
+                            break
+                    
+                    target_nat = nat_in_same_az if nat_in_same_az else nat_gateway_ids[0]
+                    lines.append(f"{subnet_id} .d.> {target_nat} : outbound via NAT")
         
         # Hide some connections to avoid clutter
         if len(nat_gateway_ids) > 1 and igw_ids:
