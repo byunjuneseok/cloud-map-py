@@ -140,7 +140,8 @@ class PlantUMLDiagramGenerator(DiagramGenerator):
             igw_ids.append(igw_id)
             lines.append(f"      VPCInternetGateway({igw_id}, \"Internet Gateway\", \"\")")
         
-        lines.append(f"      VPCGroup({vpc_id}, \"{vpc_name}\") {{")
+        vpc_cidr = getattr(topology.vpc, 'cidr_block', 'N/A')
+        lines.append(f"      VPCGroup({vpc_id}, \"{vpc_name}\\n{vpc_cidr}\") {{")
         
         # Group subnets by Availability Zone
         az_groups = {}
