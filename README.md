@@ -1,4 +1,4 @@
-# Cloud Map Python
+# cloud-map-py
 
 AWS Cloud Infrastructure Mapper - Visualize and analyze AWS cloud resources
 
