@@ -22,7 +22,7 @@ cloud-map --regions us-east-1 --presentation terminal
 cloud-map --regions ap-northeast-2 --presentation plantuml --output infrastructure.puml
 ```
 
-### Multiple Regions (Creates Single PNG)
+### Multiple Regions
 
 ```bash
 cloud-map --regions us-east-1 us-west-2 eu-west-1 --presentation plantuml
