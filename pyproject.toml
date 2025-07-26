@@ -37,6 +37,9 @@ dev = [
     "boto3-stubs[ec2,lambda,route53,apigateway]>=1.39.14",
     "types-boto3>=1.39.14",
 ]
+plantuml = [
+    "plantuml>=0.3.0",
+]
 
 [build-system]
 requires = ["hatchling"]
