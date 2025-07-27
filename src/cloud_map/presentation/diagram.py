@@ -20,6 +20,10 @@ class TextDiagramGenerator(DiagramGenerator):
     
     def generate_subnet_diagram(self, topology: NetworkTopology, output: TextIO) -> None:
         """Generate diagram at subnet level showing resources grouped by AZ."""
+        # Reset tracking variables for each diagram
+        self._displayed_rds_instances = set()
+        self._displayed_cache_instances = set()
+        
         output.write(f"VPC: {topology.vpc.name or topology.vpc.resource_id} ({topology.vpc.cidr_block})\n")
         
         # Display routing table information
@@ -76,6 +80,45 @@ class TextDiagramGenerator(DiagramGenerator):
                         output.write(f"{self._indent(5)}Private IP: {instance.private_ip}\n")
                         if instance.public_ip:
                             output.write(f"{self._indent(5)}Public IP: {instance.public_ip}\n")
+                    
+                    # RDS instances in this subnet
+                    rds_instances = topology.get_rds_instances_by_subnet(subnet.resource_id)
+                    for rds in rds_instances:
+                        if rds.resource_id not in self._displayed_rds_instances:
+                            self._displayed_rds_instances.add(rds.resource_id)
+                            output.write(f"{self._indent(4)}├─ RDS: {rds.name or rds.db_instance_identifier}\n")
+                            output.write(f"{self._indent(5)}Engine: {rds.engine} {rds.engine_version}\n")
+                            output.write(f"{self._indent(5)}Class: {rds.db_instance_class}, Status: {rds.db_instance_status}\n")
+                            if rds.endpoint:
+                                output.write(f"{self._indent(5)}Endpoint: {rds.endpoint}:{rds.port}\n")
+                            output.write(f"{self._indent(5)}Multi-AZ: {rds.multi_az}, Encrypted: {rds.storage_encrypted}\n")
+                            if rds.read_replica_db_instance_identifiers:
+                                output.write(f"{self._indent(5)}Read Replicas: {len(rds.read_replica_db_instance_identifiers)}\n")
+                            if rds.read_replica_source:
+                                output.write(f"{self._indent(5)}Read Replica of: {rds.read_replica_source}\n")
+                    
+                    # ElastiCache clusters in this subnet
+                    cache_clusters = topology.get_elasticache_clusters_by_subnet(subnet.resource_id)
+                    for cache in cache_clusters:
+                        if (not cache.replication_group_id and 
+                            cache.resource_id not in self._displayed_cache_instances):
+                            self._displayed_cache_instances.add(cache.resource_id)
+                            output.write(f"{self._indent(4)}├─ ElastiCache: {cache.name or cache.cache_cluster_id}\n")
+                            output.write(f"{self._indent(5)}Engine: {cache.engine} {cache.engine_version}\n")
+                            output.write(f"{self._indent(5)}Type: {cache.cache_node_type}, Status: {cache.cache_cluster_status}\n")
+                            output.write(f"{self._indent(5)}Nodes: {cache.num_cache_nodes}\n")
+                    
+                    # ElastiCache replication groups (show once per VPC)
+                    replication_groups = topology.get_elasticache_replication_groups_by_subnet(subnet.resource_id)
+                    for rg in replication_groups:
+                        if rg.resource_id not in self._displayed_cache_instances:
+                            self._displayed_cache_instances.add(rg.resource_id)
+                            output.write(f"{self._indent(4)}├─ ElastiCache Cluster: {rg.name or rg.replication_group_id}\n")
+                            output.write(f"{self._indent(5)}Engine: {rg.engine} {rg.engine_version}\n")
+                            output.write(f"{self._indent(5)}Type: {rg.cache_node_type}, Status: {rg.status}\n")
+                            output.write(f"{self._indent(5)}Multi-AZ: {rg.multi_az}, Auto Failover: {rg.automatic_failover}\n")
+                            if rg.member_clusters:
+                                output.write(f"{self._indent(5)}Member Clusters: {len(rg.member_clusters)}\n")
             
             # Private subnets in this AZ
             if subnet_groups['private']:
@@ -91,6 +134,45 @@ class TextDiagramGenerator(DiagramGenerator):
                         output.write(f"{self._indent(5)}Private IP: {instance.private_ip}\n")
                         if topology.nat_gateways:
                             output.write(f"{self._indent(5)}→ Routes outbound traffic via NAT Gateway\n")
+                    
+                    # RDS instances in this subnet
+                    rds_instances = topology.get_rds_instances_by_subnet(subnet.resource_id)
+                    for rds in rds_instances:
+                        if rds.resource_id not in self._displayed_rds_instances:
+                            self._displayed_rds_instances.add(rds.resource_id)
+                            output.write(f"{self._indent(4)}├─ RDS: {rds.name or rds.db_instance_identifier}\n")
+                            output.write(f"{self._indent(5)}Engine: {rds.engine} {rds.engine_version}\n")
+                            output.write(f"{self._indent(5)}Class: {rds.db_instance_class}, Status: {rds.db_instance_status}\n")
+                            if rds.endpoint:
+                                output.write(f"{self._indent(5)}Endpoint: {rds.endpoint}:{rds.port}\n")
+                            output.write(f"{self._indent(5)}Multi-AZ: {rds.multi_az}, Encrypted: {rds.storage_encrypted}\n")
+                            if rds.read_replica_db_instance_identifiers:
+                                output.write(f"{self._indent(5)}Read Replicas: {len(rds.read_replica_db_instance_identifiers)}\n")
+                            if rds.read_replica_source:
+                                output.write(f"{self._indent(5)}Read Replica of: {rds.read_replica_source}\n")
+                    
+                    # ElastiCache clusters in this subnet
+                    cache_clusters = topology.get_elasticache_clusters_by_subnet(subnet.resource_id)
+                    for cache in cache_clusters:
+                        if (not cache.replication_group_id and 
+                            cache.resource_id not in self._displayed_cache_instances):
+                            self._displayed_cache_instances.add(cache.resource_id)
+                            output.write(f"{self._indent(4)}├─ ElastiCache: {cache.name or cache.cache_cluster_id}\n")
+                            output.write(f"{self._indent(5)}Engine: {cache.engine} {cache.engine_version}\n")
+                            output.write(f"{self._indent(5)}Type: {cache.cache_node_type}, Status: {cache.cache_cluster_status}\n")
+                            output.write(f"{self._indent(5)}Nodes: {cache.num_cache_nodes}\n")
+                    
+                    # ElastiCache replication groups (show once per VPC)
+                    replication_groups = topology.get_elasticache_replication_groups_by_subnet(subnet.resource_id)
+                    for rg in replication_groups:
+                        if rg.resource_id not in self._displayed_cache_instances:
+                            self._displayed_cache_instances.add(rg.resource_id)
+                            output.write(f"{self._indent(4)}├─ ElastiCache Cluster: {rg.name or rg.replication_group_id}\n")
+                            output.write(f"{self._indent(5)}Engine: {rg.engine} {rg.engine_version}\n")
+                            output.write(f"{self._indent(5)}Type: {rg.cache_node_type}, Status: {rg.status}\n")
+                            output.write(f"{self._indent(5)}Multi-AZ: {rg.multi_az}, Auto Failover: {rg.automatic_failover}\n")
+                            if rg.member_clusters:
+                                output.write(f"{self._indent(5)}Member Clusters: {len(rg.member_clusters)}\n")
             
             output.write("\n")
     
@@ -165,6 +247,16 @@ class TextDiagramGenerator(DiagramGenerator):
         if total_instances:
             output.write(f"{self._indent(1)}Total EC2 Instances: {total_instances}\n")
         
+        # Database resources summary
+        if topology.rds_instances:
+            read_replicas = sum(len(rds.read_replica_db_instance_identifiers) for rds in topology.rds_instances)
+            primary_dbs = len([rds for rds in topology.rds_instances if not rds.read_replica_source])
+            output.write(f"{self._indent(1)}RDS Instances: {len(topology.rds_instances)} ({primary_dbs} primary, {read_replicas} read replicas)\n")
+        
+        if topology.elasticache_clusters or topology.elasticache_replication_groups:
+            cache_count = len(topology.elasticache_clusters) + len(topology.elasticache_replication_groups)
+            output.write(f"{self._indent(1)}ElastiCache Clusters: {cache_count}\n")
+        
         output.write("\n")
     
     def generate_account_diagram(self, account_topology: AccountTopology, output: TextIO) -> None:
@@ -208,3 +300,4 @@ class TextDiagramGenerator(DiagramGenerator):
         # Save to file if output manager is available
         if self.output_manager and self.session_dir:
             self.output_manager.save_terminal_output(content, self.session_dir, account_topology.region)
+    

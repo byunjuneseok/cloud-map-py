@@ -3,7 +3,7 @@
 from abc import ABC, abstractmethod
 from typing import List, Optional
 
-from ..model.models import VPC, Subnet, RouteTable, InternetGateway, EC2Instance, LambdaFunction, Route53HostedZone, APIGateway, NATGateway, NetworkACL, SecurityGroup
+from ..model.models import VPC, Subnet, RouteTable, InternetGateway, EC2Instance, LambdaFunction, Route53HostedZone, APIGateway, NATGateway, NetworkACL, SecurityGroup, RDSInstance, ElastiCacheCluster, ElastiCacheReplicationGroup
 
 
 class NetworkDiscoverer(ABC):
@@ -74,4 +74,23 @@ class NetworkUtilitiesDiscoverer(ABC):
     @abstractmethod
     def discover_api_gateways(self, vpc_id: Optional[str] = None) -> List[APIGateway]:
         """Discover API Gateways, optionally filtered by VPC."""
+        pass
+
+
+class DatabaseDiscoverer(ABC):
+    """Abstract base class for database resource discovery."""
+    
+    @abstractmethod
+    def discover_rds_instances(self, vpc_id: Optional[str] = None) -> List[RDSInstance]:
+        """Discover RDS database instances, optionally filtered by VPC."""
+        pass
+    
+    @abstractmethod
+    def discover_elasticache_clusters(self, vpc_id: Optional[str] = None) -> List[ElastiCacheCluster]:
+        """Discover ElastiCache clusters, optionally filtered by VPC."""
+        pass
+    
+    @abstractmethod
+    def discover_elasticache_replication_groups(self, vpc_id: Optional[str] = None) -> List[ElastiCacheReplicationGroup]:
+        """Discover ElastiCache replication groups, optionally filtered by VPC."""
         pass

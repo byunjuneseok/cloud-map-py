@@ -36,6 +36,8 @@ class PlantUMLDiagramGenerator(DiagramGenerator):
         lines.append("!include AWSPuml/NetworkingContentDelivery/VPCInternetGateway.puml")
         lines.append("!include AWSPuml/NetworkingContentDelivery/APIGateway.puml")
         lines.append("!include AWSPuml/NetworkingContentDelivery/Route53.puml")
+        lines.append("!include AWSPuml/Database/RDS.puml")
+        lines.append("!include AWSPuml/Database/ElastiCache.puml")
         lines.append("!include AWSPuml/Groups/AWSCloud.puml")
         lines.append("!include AWSPuml/Groups/VPC.puml")
         lines.append("!include AWSPuml/Groups/PublicSubnet.puml")
@@ -226,6 +228,31 @@ class PlantUMLDiagramGenerator(DiagramGenerator):
                                 grid_instances[row + 1][col] is not None):
                                 lines.append(f"            {grid_instances[row][col][0]} -[hidden]d- {grid_instances[row + 1][col][0]}")
                 
+                # Add database resources in this public subnet
+                rds_instances = topology.get_rds_instances_by_subnet(subnet.resource_id)
+                for rds in rds_instances:
+                    rds_id = rds.resource_id.replace('-', '_')
+                    replica_info = ""
+                    if rds.read_replica_source:
+                        replica_info = "\\n(Read Replica)"
+                    elif rds.read_replica_db_instance_identifiers:
+                        replica_info = f"\\n({len(rds.read_replica_db_instance_identifiers)} replicas)"
+                    lines.append(f"            RDS({rds_id}, \"{rds.name or rds.db_instance_identifier}\\n{rds.engine} {rds.db_instance_class}{replica_info}\", \"\")")
+                
+                # Add ElastiCache resources in this public subnet
+                cache_clusters = topology.get_elasticache_clusters_by_subnet(subnet.resource_id)
+                for cache in cache_clusters:
+                    if not cache.replication_group_id:  # Only standalone clusters
+                        cache_id = cache.resource_id.replace('-', '_')
+                        lines.append(f"            ElastiCache({cache_id}, \"{cache.name or cache.cache_cluster_id}\\n{cache.engine} {cache.cache_node_type}\", \"\")")
+                
+                # Add ElastiCache replication groups in this public subnet
+                replication_groups = topology.get_elasticache_replication_groups_by_subnet(subnet.resource_id)
+                for rg in replication_groups:
+                    rg_id = rg.resource_id.replace('-', '_')
+                    multi_az_info = f"\\n{rg.multi_az} Multi-AZ" if rg.multi_az else ""
+                    lines.append(f"            ElastiCache({rg_id}, \"{rg.name or rg.replication_group_id}\\n{rg.engine} Cluster{multi_az_info}\", \"\")")
+                
                 lines.append("          }")
             
             # Private subnets in this AZ
@@ -281,6 +308,31 @@ class PlantUMLDiagramGenerator(DiagramGenerator):
                                 grid_instances[row + 1][col] is not None):
                                 lines.append(f"            {grid_instances[row][col][0]} -[hidden]d- {grid_instances[row + 1][col][0]}")
                 
+                # Add database resources in this private subnet
+                rds_instances = topology.get_rds_instances_by_subnet(subnet.resource_id)
+                for rds in rds_instances:
+                    rds_id = rds.resource_id.replace('-', '_')
+                    replica_info = ""
+                    if rds.read_replica_source:
+                        replica_info = "\\n(Read Replica)"
+                    elif rds.read_replica_db_instance_identifiers:
+                        replica_info = f"\\n({len(rds.read_replica_db_instance_identifiers)} replicas)"
+                    lines.append(f"            RDS({rds_id}, \"{rds.name or rds.db_instance_identifier}\\n{rds.engine} {rds.db_instance_class}{replica_info}\", \"\")")
+                
+                # Add ElastiCache resources in this private subnet
+                cache_clusters = topology.get_elasticache_clusters_by_subnet(subnet.resource_id)
+                for cache in cache_clusters:
+                    if not cache.replication_group_id:  # Only standalone clusters
+                        cache_id = cache.resource_id.replace('-', '_')
+                        lines.append(f"            ElastiCache({cache_id}, \"{cache.name or cache.cache_cluster_id}\\n{cache.engine} {cache.cache_node_type}\", \"\")")
+                
+                # Add ElastiCache replication groups in this private subnet
+                replication_groups = topology.get_elasticache_replication_groups_by_subnet(subnet.resource_id)
+                for rg in replication_groups:
+                    rg_id = rg.resource_id.replace('-', '_')
+                    multi_az_info = f"\\n{rg.multi_az} Multi-AZ" if rg.multi_az else ""
+                    lines.append(f"            ElastiCache({rg_id}, \"{rg.name or rg.replication_group_id}\\n{rg.engine} Cluster{multi_az_info}\", \"\")")
+                
                 lines.append("          }")
             
             lines.append("        }")
@@ -302,6 +354,7 @@ class PlantUMLDiagramGenerator(DiagramGenerator):
             api_id = api.resource_id.replace('-', '_')
             api_ids.append(api_id)
             lines.append(f"      APIGateway({api_id}, \"{api.api_name}\\n{api.api_type}\", \"\")")
+        
         
         lines.append("")
         

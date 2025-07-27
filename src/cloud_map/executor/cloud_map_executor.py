@@ -9,6 +9,7 @@ from ..discovery.aws_network_discoverer import AWSNetworkDiscoverer
 from ..discovery.aws_compute_discoverer import AWSComputeDiscoverer
 from ..discovery.aws_serverless_discoverer import AWSServerlessDiscoverer
 from ..discovery.aws_network_utilities_discoverer import AWSNetworkUtilitiesDiscoverer
+from ..discovery.aws_database_discoverer import AWSDatabaseDiscoverer
 from ..presentation.diagram import TextDiagramGenerator
 from ..presentation.plantuml_generator import PlantUMLDiagramGenerator
 from ..presentation.interfaces import DiagramGenerator
@@ -81,6 +82,7 @@ class CloudMapExecutor:
         compute_discoverer = AWSComputeDiscoverer(region, self.session)
         serverless_discoverer = AWSServerlessDiscoverer(region, self.session)
         utilities_discoverer = AWSNetworkUtilitiesDiscoverer(region, self.session)
+        database_discoverer = AWSDatabaseDiscoverer(region, self.session)
         
         # Network discovery
         vpcs = network_discoverer.discover_vpcs()
@@ -121,6 +123,11 @@ class CloudMapExecutor:
         route53_zones = utilities_discoverer.discover_route53_zones(vpc_id)
         api_gateways = utilities_discoverer.discover_api_gateways(vpc_id)
         
+        # Database discovery
+        rds_instances = database_discoverer.discover_rds_instances(vpc_id)
+        elasticache_clusters = database_discoverer.discover_elasticache_clusters(vpc_id)
+        elasticache_replication_groups = database_discoverer.discover_elasticache_replication_groups(vpc_id)
+        
         # Organization
         network_topologies = self.organizer.organize_network_topology(
             vpcs=vpcs,
@@ -133,7 +140,10 @@ class CloudMapExecutor:
             ec2_instances=ec2_instances,
             lambda_functions=lambda_functions,
             route53_zones=route53_zones,
-            api_gateways=api_gateways
+            api_gateways=api_gateways,
+            rds_instances=rds_instances,
+            elasticache_clusters=elasticache_clusters,
+            elasticache_replication_groups=elasticache_replication_groups
         )
         
         account_topology = self.organizer.create_account_topology(

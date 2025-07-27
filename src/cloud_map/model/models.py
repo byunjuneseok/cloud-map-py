@@ -189,3 +189,85 @@ class SecurityGroup(BaseResource):
     def __post_init__(self):
         super().__post_init__()
         self.resource_type = "security_group"
+
+
+@dataclass
+class RDSInstance(BaseResource):
+    """RDS database instance resource model."""
+    
+    db_instance_identifier: str
+    db_instance_class: str
+    engine: str
+    engine_version: str
+    db_name: Optional[str]
+    endpoint: Optional[str]
+    port: int
+    vpc_id: Optional[str]
+    subnet_group_name: Optional[str]
+    availability_zone: str
+    multi_az: bool
+    publicly_accessible: bool
+    storage_type: str
+    allocated_storage: int
+    storage_encrypted: bool
+    db_instance_status: str
+    read_replica_source: Optional[str] = None
+    read_replica_db_instance_identifiers: List[str] = None
+    name: Optional[str] = None
+    
+    def __post_init__(self):
+        super().__post_init__()
+        self.resource_type = "rds_instance"
+        if self.read_replica_db_instance_identifiers is None:
+            self.read_replica_db_instance_identifiers = []
+
+
+@dataclass
+class ElastiCacheCluster(BaseResource):
+    """ElastiCache cluster resource model."""
+    
+    cache_cluster_id: str
+    cache_node_type: str
+    engine: str
+    engine_version: str
+    cache_cluster_status: str
+    num_cache_nodes: int
+    preferred_availability_zone: Optional[str]
+    cache_subnet_group_name: Optional[str]
+    vpc_id: Optional[str]
+    security_group_ids: List[str]
+    port: int
+    parameter_group_name: str
+    cache_nodes: List[Dict[str, str]]
+    replication_group_id: Optional[str] = None
+    name: Optional[str] = None
+    
+    def __post_init__(self):
+        super().__post_init__()
+        self.resource_type = "elasticache_cluster"
+
+
+@dataclass
+class ElastiCacheReplicationGroup(BaseResource):
+    """ElastiCache replication group resource model."""
+    
+    replication_group_id: str
+    description: str
+    status: str
+    primary_cluster_id: Optional[str]
+    member_clusters: List[str]
+    node_groups: List[Dict[str, str]]
+    cache_node_type: str
+    engine: str
+    engine_version: str
+    cache_subnet_group_name: Optional[str]
+    vpc_id: Optional[str]
+    security_group_ids: List[str]
+    port: int
+    multi_az: str
+    automatic_failover: str
+    name: Optional[str] = None
+    
+    def __post_init__(self):
+        super().__post_init__()
+        self.resource_type = "elasticache_replication_group"
