@@ -38,6 +38,7 @@ class PlantUMLDiagramGenerator(DiagramGenerator):
         lines.append("!include AWSPuml/NetworkingContentDelivery/Route53.puml")
         lines.append("!include AWSPuml/Database/RDS.puml")
         lines.append("!include AWSPuml/Database/ElastiCache.puml")
+        lines.append("!include AWSPuml/Analytics/ManagedStreamingforApacheKafka.puml")
         lines.append("!include AWSPuml/Groups/AWSCloud.puml")
         lines.append("!include AWSPuml/Groups/VPC.puml")
         lines.append("!include AWSPuml/Groups/PublicSubnet.puml")
@@ -135,6 +136,12 @@ class PlantUMLDiagramGenerator(DiagramGenerator):
         vpc_name = topology.vpc.name or topology.vpc.resource_id
         vpc_id = topology.vpc.resource_id.replace('-', '_')
         
+        # Track already added database resources to prevent duplicates
+        added_rds_instances = set()
+        added_cache_clusters = set()
+        added_cache_replication_groups = set()
+        added_msk_brokers = set()
+        
         # Add Internet Gateway outside VPC (at cloud level)
         igw_ids = []
         for igw in topology.internet_gateways:
@@ -231,27 +238,40 @@ class PlantUMLDiagramGenerator(DiagramGenerator):
                 # Add database resources in this public subnet
                 rds_instances = topology.get_rds_instances_by_subnet(subnet.resource_id)
                 for rds in rds_instances:
-                    rds_id = rds.resource_id.replace('-', '_')
-                    replica_info = ""
-                    if rds.read_replica_source:
-                        replica_info = "\\n(Read Replica)"
-                    elif rds.read_replica_db_instance_identifiers:
-                        replica_info = f"\\n({len(rds.read_replica_db_instance_identifiers)} replicas)"
-                    lines.append(f"            RDS({rds_id}, \"{rds.name or rds.db_instance_identifier}\\n{rds.engine} {rds.db_instance_class}{replica_info}\", \"\")")
+                    if rds.resource_id not in added_rds_instances:
+                        added_rds_instances.add(rds.resource_id)
+                        rds_id = rds.resource_id.replace('-', '_')
+                        replica_info = ""
+                        if rds.read_replica_source:
+                            replica_info = "\\n(Read Replica)"
+                        elif rds.read_replica_db_instance_identifiers:
+                            replica_info = f"\\n({len(rds.read_replica_db_instance_identifiers)} replicas)"
+                        lines.append(f"            RDS({rds_id}, \"{rds.name or rds.db_instance_identifier}\\n{rds.engine} {rds.db_instance_class}{replica_info}\", \"\")")
                 
                 # Add ElastiCache resources in this public subnet
                 cache_clusters = topology.get_elasticache_clusters_by_subnet(subnet.resource_id)
                 for cache in cache_clusters:
-                    if not cache.replication_group_id:  # Only standalone clusters
+                    if not cache.replication_group_id and cache.resource_id not in added_cache_clusters:  # Only standalone clusters
+                        added_cache_clusters.add(cache.resource_id)
                         cache_id = cache.resource_id.replace('-', '_')
                         lines.append(f"            ElastiCache({cache_id}, \"{cache.name or cache.cache_cluster_id}\\n{cache.engine} {cache.cache_node_type}\", \"\")")
                 
                 # Add ElastiCache replication groups in this public subnet
                 replication_groups = topology.get_elasticache_replication_groups_by_subnet(subnet.resource_id)
                 for rg in replication_groups:
-                    rg_id = rg.resource_id.replace('-', '_')
-                    multi_az_info = f"\\n{rg.multi_az} Multi-AZ" if rg.multi_az else ""
-                    lines.append(f"            ElastiCache({rg_id}, \"{rg.name or rg.replication_group_id}\\n{rg.engine} Cluster{multi_az_info}\", \"\")")
+                    if rg.resource_id not in added_cache_replication_groups:
+                        added_cache_replication_groups.add(rg.resource_id)
+                        rg_id = rg.resource_id.replace('-', '_')
+                        multi_az_info = f"\\n{rg.multi_az} Multi-AZ" if rg.multi_az else ""
+                        lines.append(f"            ElastiCache({rg_id}, \"{rg.name or rg.replication_group_id}\\n{rg.engine} Cluster{multi_az_info}\", \"\")")
+                
+                # Add MSK broker nodes in this public subnet
+                msk_broker_nodes = topology.get_msk_broker_nodes_by_subnet(subnet.resource_id)
+                for broker in msk_broker_nodes:
+                    if broker.resource_id not in added_msk_brokers:
+                        added_msk_brokers.add(broker.resource_id)
+                        broker_id = broker.resource_id.replace('-', '_')
+                        lines.append(f"            ManagedStreamingforApacheKafka({broker_id}, \"{broker.name or broker.broker_id}\\nKafka Broker\\n{broker.instance_type}\", \"\")")
                 
                 lines.append("          }")
             
@@ -311,27 +331,40 @@ class PlantUMLDiagramGenerator(DiagramGenerator):
                 # Add database resources in this private subnet
                 rds_instances = topology.get_rds_instances_by_subnet(subnet.resource_id)
                 for rds in rds_instances:
-                    rds_id = rds.resource_id.replace('-', '_')
-                    replica_info = ""
-                    if rds.read_replica_source:
-                        replica_info = "\\n(Read Replica)"
-                    elif rds.read_replica_db_instance_identifiers:
-                        replica_info = f"\\n({len(rds.read_replica_db_instance_identifiers)} replicas)"
-                    lines.append(f"            RDS({rds_id}, \"{rds.name or rds.db_instance_identifier}\\n{rds.engine} {rds.db_instance_class}{replica_info}\", \"\")")
+                    if rds.resource_id not in added_rds_instances:
+                        added_rds_instances.add(rds.resource_id)
+                        rds_id = rds.resource_id.replace('-', '_')
+                        replica_info = ""
+                        if rds.read_replica_source:
+                            replica_info = "\\n(Read Replica)"
+                        elif rds.read_replica_db_instance_identifiers:
+                            replica_info = f"\\n({len(rds.read_replica_db_instance_identifiers)} replicas)"
+                        lines.append(f"            RDS({rds_id}, \"{rds.name or rds.db_instance_identifier}\\n{rds.engine} {rds.db_instance_class}{replica_info}\", \"\")")
                 
                 # Add ElastiCache resources in this private subnet
                 cache_clusters = topology.get_elasticache_clusters_by_subnet(subnet.resource_id)
                 for cache in cache_clusters:
-                    if not cache.replication_group_id:  # Only standalone clusters
+                    if not cache.replication_group_id and cache.resource_id not in added_cache_clusters:  # Only standalone clusters
+                        added_cache_clusters.add(cache.resource_id)
                         cache_id = cache.resource_id.replace('-', '_')
                         lines.append(f"            ElastiCache({cache_id}, \"{cache.name or cache.cache_cluster_id}\\n{cache.engine} {cache.cache_node_type}\", \"\")")
                 
                 # Add ElastiCache replication groups in this private subnet
                 replication_groups = topology.get_elasticache_replication_groups_by_subnet(subnet.resource_id)
                 for rg in replication_groups:
-                    rg_id = rg.resource_id.replace('-', '_')
-                    multi_az_info = f"\\n{rg.multi_az} Multi-AZ" if rg.multi_az else ""
-                    lines.append(f"            ElastiCache({rg_id}, \"{rg.name or rg.replication_group_id}\\n{rg.engine} Cluster{multi_az_info}\", \"\")")
+                    if rg.resource_id not in added_cache_replication_groups:
+                        added_cache_replication_groups.add(rg.resource_id)
+                        rg_id = rg.resource_id.replace('-', '_')
+                        multi_az_info = f"\\n{rg.multi_az} Multi-AZ" if rg.multi_az else ""
+                        lines.append(f"            ElastiCache({rg_id}, \"{rg.name or rg.replication_group_id}\\n{rg.engine} Cluster{multi_az_info}\", \"\")")
+                
+                # Add MSK broker nodes in this private subnet
+                msk_broker_nodes = topology.get_msk_broker_nodes_by_subnet(subnet.resource_id)
+                for broker in msk_broker_nodes:
+                    if broker.resource_id not in added_msk_brokers:
+                        added_msk_brokers.add(broker.resource_id)
+                        broker_id = broker.resource_id.replace('-', '_')
+                        lines.append(f"            ManagedStreamingforApacheKafka({broker_id}, \"{broker.name or broker.broker_id}\\nKafka Broker\\n{broker.instance_type}\", \"\")")
                 
                 lines.append("          }")
             

@@ -3,7 +3,7 @@
 from typing import List, Optional
 from dataclasses import dataclass, field
 
-from ..model.models import VPC, Subnet, RouteTable, InternetGateway, EC2Instance, LambdaFunction, Route53HostedZone, APIGateway, NATGateway, NetworkACL, SecurityGroup, RDSInstance, ElastiCacheCluster, ElastiCacheReplicationGroup
+from ..model.models import VPC, Subnet, RouteTable, InternetGateway, EC2Instance, LambdaFunction, Route53HostedZone, APIGateway, NATGateway, NetworkACL, SecurityGroup, RDSInstance, ElastiCacheCluster, ElastiCacheReplicationGroup, MSKCluster, RDSNode, ElastiCacheNode, MSKBrokerNode
 
 
 @dataclass
@@ -24,6 +24,7 @@ class NetworkTopology:
     rds_instances: List[RDSInstance] = field(default_factory=list)
     elasticache_clusters: List[ElastiCacheCluster] = field(default_factory=list)
     elasticache_replication_groups: List[ElastiCacheReplicationGroup] = field(default_factory=list)
+    msk_clusters: List[MSKCluster] = field(default_factory=list)
     
     def get_subnet_by_id(self, subnet_id: str) -> Optional[Subnet]:
         """Get subnet by ID."""
@@ -37,16 +38,42 @@ class NetworkTopology:
         """Get Lambda functions in a specific subnet."""
         return [func for func in self.lambda_functions if subnet_id in func.subnet_ids]
     
+    def get_rds_nodes_by_subnet(self, subnet_id: str) -> List['RDSNode']:
+        """Get individual RDS nodes in this specific subnet."""
+        nodes = []
+        for rds_instance in self.rds_instances:
+            for node in rds_instance.rds_nodes:
+                if node.subnet_id == subnet_id:
+                    nodes.append(node)
+        return nodes
+    
     def get_rds_instances_by_subnet(self, subnet_id: str) -> List['RDSInstance']:
         """Get RDS instances that have subnet groups containing this subnet."""
-        # For now, we'll show RDS instances in all subnets of their AZ
-        # since RDS subnet groups span multiple subnets in an AZ
+        # For backward compatibility - show RDS instances in all subnets of their AZ
         subnet = self.get_subnet_by_id(subnet_id)
         if not subnet:
             return []
         
         return [rds for rds in self.rds_instances 
                 if rds.availability_zone == subnet.availability_zone]
+    
+    def get_elasticache_nodes_by_subnet(self, subnet_id: str) -> List['ElastiCacheNode']:
+        """Get individual ElastiCache nodes in this specific subnet."""
+        nodes = []
+        
+        # Get nodes from standalone clusters
+        for cluster in self.elasticache_clusters:
+            for node in cluster.elasticache_nodes:
+                if node.subnet_id == subnet_id:
+                    nodes.append(node)
+        
+        # Get nodes from replication groups
+        for replication_group in self.elasticache_replication_groups:
+            for node in replication_group.elasticache_nodes:
+                if node.subnet_id == subnet_id:
+                    nodes.append(node)
+        
+        return nodes
     
     def get_elasticache_clusters_by_subnet(self, subnet_id: str) -> List['ElastiCacheCluster']:
         """Get ElastiCache clusters that are in subnet groups containing this subnet."""
@@ -63,6 +90,15 @@ class NetworkTopology:
         """Get ElastiCache replication groups that span this subnet."""
         # Replication groups typically span multiple AZs, so show in all subnets
         return self.elasticache_replication_groups
+    
+    def get_msk_broker_nodes_by_subnet(self, subnet_id: str) -> List['MSKBrokerNode']:
+        """Get individual MSK broker nodes in this specific subnet."""
+        nodes = []
+        for cluster in self.msk_clusters:
+            for node in cluster.broker_nodes:
+                if node.subnet_id == subnet_id:
+                    nodes.append(node)
+        return nodes
     
     def get_public_subnets(self) -> List[Subnet]:
         """Get subnets that map public IPs on launch."""
@@ -117,7 +153,8 @@ class ResourceOrganizer:
         api_gateways: Optional[List[APIGateway]] = None,
         rds_instances: Optional[List[RDSInstance]] = None,
         elasticache_clusters: Optional[List[ElastiCacheCluster]] = None,
-        elasticache_replication_groups: Optional[List[ElastiCacheReplicationGroup]] = None
+        elasticache_replication_groups: Optional[List[ElastiCacheReplicationGroup]] = None,
+        msk_clusters: Optional[List[MSKCluster]] = None
     ) -> List[NetworkTopology]:
         """Organize resources into VPC-level topologies."""
         
@@ -128,6 +165,7 @@ class ResourceOrganizer:
         rds_instances = rds_instances or []
         elasticache_clusters = elasticache_clusters or []
         elasticache_replication_groups = elasticache_replication_groups or []
+        msk_clusters = msk_clusters or []
         
         for vpc in vpcs:
             vpc_subnets = [subnet for subnet in subnets if subnet.vpc_id == vpc.resource_id]
@@ -148,6 +186,7 @@ class ResourceOrganizer:
             vpc_rds_instances = [rds for rds in rds_instances if rds.vpc_id == vpc.resource_id]
             vpc_elasticache_clusters = [cache for cache in elasticache_clusters if cache.vpc_id == vpc.resource_id]
             vpc_elasticache_replication_groups = [rg for rg in elasticache_replication_groups if rg.vpc_id == vpc.resource_id]
+            vpc_msk_clusters = [msk for msk in msk_clusters if msk.vpc_id == vpc.resource_id]
             
             topology = NetworkTopology(
                 vpc=vpc,
@@ -163,7 +202,8 @@ class ResourceOrganizer:
                 api_gateways=api_gateways,
                 rds_instances=vpc_rds_instances,
                 elasticache_clusters=vpc_elasticache_clusters,
-                elasticache_replication_groups=vpc_elasticache_replication_groups
+                elasticache_replication_groups=vpc_elasticache_replication_groups,
+                msk_clusters=vpc_msk_clusters
             )
             topologies.append(topology)
         

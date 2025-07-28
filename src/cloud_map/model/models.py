@@ -213,6 +213,7 @@ class RDSInstance(BaseResource):
     db_instance_status: str
     read_replica_source: Optional[str] = None
     read_replica_db_instance_identifiers: List[str] = None
+    rds_nodes: List['RDSNode'] = None
     name: Optional[str] = None
     
     def __post_init__(self):
@@ -220,6 +221,8 @@ class RDSInstance(BaseResource):
         self.resource_type = "rds_instance"
         if self.read_replica_db_instance_identifiers is None:
             self.read_replica_db_instance_identifiers = []
+        if self.rds_nodes is None:
+            self.rds_nodes = []
 
 
 @dataclass
@@ -239,12 +242,15 @@ class ElastiCacheCluster(BaseResource):
     port: int
     parameter_group_name: str
     cache_nodes: List[Dict[str, str]]
+    elasticache_nodes: List['ElastiCacheNode'] = None
     replication_group_id: Optional[str] = None
     name: Optional[str] = None
     
     def __post_init__(self):
         super().__post_init__()
         self.resource_type = "elasticache_cluster"
+        if self.elasticache_nodes is None:
+            self.elasticache_nodes = []
 
 
 @dataclass
@@ -266,8 +272,101 @@ class ElastiCacheReplicationGroup(BaseResource):
     port: int
     multi_az: str
     automatic_failover: str
+    elasticache_nodes: List['ElastiCacheNode'] = None
     name: Optional[str] = None
     
     def __post_init__(self):
         super().__post_init__()
         self.resource_type = "elasticache_replication_group"
+        if self.elasticache_nodes is None:
+            self.elasticache_nodes = []
+
+
+@dataclass
+class RDSNode(BaseResource):
+    """Individual RDS node (for Multi-AZ or read replicas)."""
+    
+    db_instance_identifier: str
+    parent_cluster_id: str
+    node_type: str  # primary, replica, standby
+    availability_zone: str
+    subnet_id: str
+    endpoint: Optional[str]
+    port: int
+    status: str
+    name: Optional[str] = None
+    
+    def __post_init__(self):
+        super().__post_init__()
+        self.resource_type = "rds_node"
+
+
+@dataclass
+class ElastiCacheNode(BaseResource):
+    """Individual ElastiCache node."""
+    
+    cache_node_id: str
+    cache_cluster_id: str
+    cache_node_type: str
+    cache_node_status: str
+    availability_zone: str
+    subnet_id: str
+    endpoint: Optional[str]
+    port: int
+    parameter_group_status: str
+    name: Optional[str] = None
+    
+    def __post_init__(self):
+        super().__post_init__()
+        self.resource_type = "elasticache_node"
+
+
+@dataclass
+class MSKBrokerNode(BaseResource):
+    """Individual MSK Kafka broker node."""
+    
+    broker_id: str
+    cluster_arn: str
+    instance_type: str
+    availability_zone: str
+    subnet_id: str
+    client_subnet: str
+    endpoint: Optional[str]
+    client_vpc_ip_address: str
+    status: str
+    name: Optional[str] = None
+    
+    def __post_init__(self):
+        super().__post_init__()
+        self.resource_type = "msk_broker_node"
+
+
+@dataclass
+class MSKCluster(BaseResource):
+    """Amazon MSK (Kafka) cluster resource model."""
+    
+    cluster_name: str
+    cluster_arn: str
+    kafka_version: str
+    number_of_broker_nodes: int
+    instance_type: str
+    state: str
+    creation_time: str
+    current_version: str
+    broker_node_group_info: Dict[str, str]
+    subnet_ids: List[str]
+    security_group_ids: List[str]
+    vpc_id: Optional[str]
+    encryption_info: Dict[str, str]
+    client_authentication: Dict[str, str]
+    logging_info: Dict[str, str]
+    broker_nodes: List[MSKBrokerNode] = None
+    zookeeper_connect_string: Optional[str] = None
+    bootstrap_broker_string: Optional[str] = None
+    name: Optional[str] = None
+    
+    def __post_init__(self):
+        super().__post_init__()
+        self.resource_type = "msk_cluster"
+        if self.broker_nodes is None:
+            self.broker_nodes = []

@@ -5,7 +5,7 @@ import boto3
 from botocore.exceptions import BotoCoreError, ClientError
 
 from .interfaces import DatabaseDiscoverer
-from ..model.models import RDSInstance, ElastiCacheCluster, ElastiCacheReplicationGroup
+from ..model.models import RDSInstance, ElastiCacheCluster, ElastiCacheReplicationGroup, MSKCluster, RDSNode, ElastiCacheNode, MSKBrokerNode
 from .boto3_caller import Boto3Caller
 
 
@@ -247,3 +247,116 @@ class AWSDatabaseDiscoverer(DatabaseDiscoverer):
             
         except (BotoCoreError, ClientError) as e:
             raise RuntimeError(f"Failed to discover ElastiCache replication groups: {e}")
+    
+    def discover_msk_clusters(self, vpc_id: Optional[str] = None) -> List[MSKCluster]:
+        """Discover MSK Kafka clusters, optionally filtered by VPC."""
+        try:
+            response = self.boto3_caller.call_api('kafka', 'list_clusters')
+            clusters = []
+            
+            for cluster_info in response['ClusterInfoList']:
+                cluster_vpc_id = cluster_info.get('BrokerNodeGroupInfo', {}).get('ClientSubnets', [])
+                
+                # Get VPC ID from first subnet
+                cluster_vpc_id_resolved = None
+                if cluster_vpc_id:
+                    try:
+                        subnet_response = self.boto3_caller.call_api(
+                            'ec2',
+                            'describe_subnets',
+                            SubnetIds=[cluster_vpc_id[0]]
+                        )
+                        if subnet_response['Subnets']:
+                            cluster_vpc_id_resolved = subnet_response['Subnets'][0].get('VpcId')
+                    except (BotoCoreError, ClientError):
+                        pass
+                
+                # Filter by VPC if specified
+                if vpc_id and cluster_vpc_id_resolved != vpc_id:
+                    continue
+                
+                # Get detailed cluster information
+                cluster_arn = cluster_info['ClusterArn']
+                try:
+                    cluster_detail = self.boto3_caller.call_api(
+                        'kafka',
+                        'describe_cluster',
+                        ClusterArn=cluster_arn
+                    )
+                    cluster_data = cluster_detail['ClusterInfo']
+                except (BotoCoreError, ClientError):
+                    cluster_data = cluster_info
+                
+                # Get tags
+                try:
+                    tags_response = self.boto3_caller.call_api(
+                        'kafka',
+                        'list_tags_for_resource',
+                        ResourceArn=cluster_arn
+                    )
+                    tags = tags_response.get('Tags', {})
+                except (BotoCoreError, ClientError):
+                    tags = {}
+                
+                # Get broker node information
+                broker_nodes = []
+                try:
+                    nodes_response = self.boto3_caller.call_api(
+                        'kafka',
+                        'list_nodes',
+                        ClusterArn=cluster_arn
+                    )
+                    
+                    for node_info in nodes_response.get('NodeInfoList', []):
+                        broker_node = MSKBrokerNode(
+                            resource_id=f"{cluster_data['ClusterName']}-broker-{node_info.get('BrokerNodeInfo', {}).get('BrokerId', '')}",
+                            resource_type='msk_broker_node',
+                            region=self.region,
+                            tags=tags,
+                            broker_id=str(node_info.get('BrokerNodeInfo', {}).get('BrokerId', '')),
+                            cluster_arn=cluster_arn,
+                            instance_type=cluster_data.get('BrokerNodeGroupInfo', {}).get('InstanceType', ''),
+                            availability_zone=node_info.get('BrokerNodeInfo', {}).get('AvailabilityZone', ''),
+                            subnet_id=node_info.get('BrokerNodeInfo', {}).get('ClientSubnet', ''),
+                            client_subnet=node_info.get('BrokerNodeInfo', {}).get('ClientSubnet', ''),
+                            endpoint=node_info.get('BrokerNodeInfo', {}).get('Endpoints', [{}])[0] if node_info.get('BrokerNodeInfo', {}).get('Endpoints') else None,
+                            client_vpc_ip_address=node_info.get('BrokerNodeInfo', {}).get('ClientVpcIpAddress', ''),
+                            status=cluster_data.get('State', '')
+                        )
+                        broker_nodes.append(broker_node)
+                        
+                except (BotoCoreError, ClientError):
+                    pass  # Continue without detailed node info
+                
+                broker_node_group_info = cluster_data.get('BrokerNodeGroupInfo', {})
+                
+                cluster = MSKCluster(
+                    resource_id=cluster_data['ClusterName'],
+                    resource_type='msk_cluster',
+                    region=self.region,
+                    tags=tags,
+                    cluster_name=cluster_data['ClusterName'],
+                    cluster_arn=cluster_arn,
+                    kafka_version=cluster_data.get('CurrentBrokerSoftwareInfo', {}).get('KafkaVersion', ''),
+                    number_of_broker_nodes=cluster_data.get('NumberOfBrokerNodes', 0),
+                    instance_type=broker_node_group_info.get('InstanceType', ''),
+                    state=cluster_data.get('State', ''),
+                    creation_time=cluster_data.get('CreationTime', ''),
+                    current_version=cluster_data.get('CurrentVersion', ''),
+                    broker_node_group_info=broker_node_group_info,
+                    subnet_ids=broker_node_group_info.get('ClientSubnets', []),
+                    security_group_ids=broker_node_group_info.get('SecurityGroups', []),
+                    vpc_id=cluster_vpc_id_resolved,
+                    encryption_info=cluster_data.get('EncryptionInfo', {}),
+                    client_authentication=cluster_data.get('ClientAuthentication', {}),
+                    logging_info=cluster_data.get('LoggingInfo', {}),
+                    broker_nodes=broker_nodes,
+                    zookeeper_connect_string=cluster_data.get('ZookeeperConnectString'),
+                    bootstrap_broker_string=cluster_data.get('BootstrapBrokerString')
+                )
+                clusters.append(cluster)
+            
+            return clusters
+            
+        except (BotoCoreError, ClientError) as e:
+            raise RuntimeError(f"Failed to discover MSK clusters: {e}")

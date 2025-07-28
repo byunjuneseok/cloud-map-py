@@ -127,6 +127,7 @@ class CloudMapExecutor:
         rds_instances = database_discoverer.discover_rds_instances(vpc_id)
         elasticache_clusters = database_discoverer.discover_elasticache_clusters(vpc_id)
         elasticache_replication_groups = database_discoverer.discover_elasticache_replication_groups(vpc_id)
+        msk_clusters = database_discoverer.discover_msk_clusters(vpc_id)
         
         # Organization
         network_topologies = self.organizer.organize_network_topology(
@@ -143,7 +144,8 @@ class CloudMapExecutor:
             api_gateways=api_gateways,
             rds_instances=rds_instances,
             elasticache_clusters=elasticache_clusters,
-            elasticache_replication_groups=elasticache_replication_groups
+            elasticache_replication_groups=elasticache_replication_groups,
+            msk_clusters=msk_clusters
         )
         
         account_topology = self.organizer.create_account_topology(
@@ -225,6 +227,9 @@ class CloudMapExecutor:
         lines.append("!include AWSPuml/NetworkingContentDelivery/VPCInternetGateway.puml")
         lines.append("!include AWSPuml/NetworkingContentDelivery/APIGateway.puml")
         lines.append("!include AWSPuml/NetworkingContentDelivery/Route53.puml")
+        lines.append("!include AWSPuml/Database/RDS.puml")
+        lines.append("!include AWSPuml/Database/ElastiCache.puml")
+        lines.append("!include AWSPuml/Analytics/ManagedStreamingforApacheKafka.puml")
         lines.append("!include AWSPuml/Groups/AWSCloud.puml")
         lines.append("!include AWSPuml/Groups/VPC.puml")
         lines.append("!include AWSPuml/Groups/PublicSubnet.puml")

@@ -3,7 +3,7 @@
 from abc import ABC, abstractmethod
 from typing import List, Optional
 
-from ..model.models import VPC, Subnet, RouteTable, InternetGateway, EC2Instance, LambdaFunction, Route53HostedZone, APIGateway, NATGateway, NetworkACL, SecurityGroup, RDSInstance, ElastiCacheCluster, ElastiCacheReplicationGroup
+from ..model.models import VPC, Subnet, RouteTable, InternetGateway, EC2Instance, LambdaFunction, Route53HostedZone, APIGateway, NATGateway, NetworkACL, SecurityGroup, RDSInstance, ElastiCacheCluster, ElastiCacheReplicationGroup, MSKCluster, RDSNode, ElastiCacheNode, MSKBrokerNode
 
 
 class NetworkDiscoverer(ABC):
@@ -93,4 +93,9 @@ class DatabaseDiscoverer(ABC):
     @abstractmethod
     def discover_elasticache_replication_groups(self, vpc_id: Optional[str] = None) -> List[ElastiCacheReplicationGroup]:
         """Discover ElastiCache replication groups, optionally filtered by VPC."""
+        pass
+    
+    @abstractmethod
+    def discover_msk_clusters(self, vpc_id: Optional[str] = None) -> List[MSKCluster]:
+        """Discover MSK Kafka clusters, optionally filtered by VPC."""
         pass

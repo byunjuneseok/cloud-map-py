@@ -119,6 +119,16 @@ class TextDiagramGenerator(DiagramGenerator):
                             output.write(f"{self._indent(5)}Multi-AZ: {rg.multi_az}, Auto Failover: {rg.automatic_failover}\n")
                             if rg.member_clusters:
                                 output.write(f"{self._indent(5)}Member Clusters: {len(rg.member_clusters)}\n")
+                    
+                    # MSK Kafka broker nodes in this public subnet
+                    msk_broker_nodes = topology.get_msk_broker_nodes_by_subnet(subnet.resource_id)
+                    for broker in msk_broker_nodes:
+                        output.write(f"{self._indent(4)}├─ MSK Broker: {broker.name or broker.broker_id}\n")
+                        output.write(f"{self._indent(5)}Cluster: {broker.cluster_arn.split('/')[-1]}\n")
+                        output.write(f"{self._indent(5)}Instance Type: {broker.instance_type}\n")
+                        output.write(f"{self._indent(5)}Status: {broker.status}\n")
+                        if broker.client_vpc_ip_address:
+                            output.write(f"{self._indent(5)}VPC IP: {broker.client_vpc_ip_address}\n")
             
             # Private subnets in this AZ
             if subnet_groups['private']:
@@ -173,6 +183,16 @@ class TextDiagramGenerator(DiagramGenerator):
                             output.write(f"{self._indent(5)}Multi-AZ: {rg.multi_az}, Auto Failover: {rg.automatic_failover}\n")
                             if rg.member_clusters:
                                 output.write(f"{self._indent(5)}Member Clusters: {len(rg.member_clusters)}\n")
+                    
+                    # MSK Kafka broker nodes in this private subnet  
+                    msk_broker_nodes = topology.get_msk_broker_nodes_by_subnet(subnet.resource_id)
+                    for broker in msk_broker_nodes:
+                        output.write(f"{self._indent(4)}├─ MSK Broker: {broker.name or broker.broker_id}\n")
+                        output.write(f"{self._indent(5)}Cluster: {broker.cluster_arn.split('/')[-1]}\n")
+                        output.write(f"{self._indent(5)}Instance Type: {broker.instance_type}\n")
+                        output.write(f"{self._indent(5)}Status: {broker.status}\n")
+                        if broker.client_vpc_ip_address:
+                            output.write(f"{self._indent(5)}VPC IP: {broker.client_vpc_ip_address}\n")
             
             output.write("\n")
     
